@@ -1,0 +1,167 @@
+#!/usr/bin/env perl
+#===============================================================================
+#
+# Description: Small RNA preprocess tool (srpt)
+#
+# Copyright (c) 2017 Northwest A&F University
+# Author: Qinhu Wang
+# Email: wangqinhu@nwafu.edu.cn
+#
+#===============================================================================
+
+use strict;
+use warnings;
+
+srpt();
+
+#-------------------------------------------------------------------------------
+# Subroutine
+#-------------------------------------------------------------------------------
+
+sub srpt {
+
+	# file i/o
+	my $adapter_seq = $ARGV[0] || 'AGATCGGA';
+	my $srnaseq_file = $ARGV[1] || 'srna.fq';
+	my $clipped_file = $ARGV[2] || 'srna.clipped.fq';
+	my $stat_file = $ARGV[3] || 'srna.stat.tsv';
+	my $plot_file = $ARGV[4] || 'srna.dist.pdf';
+	my $minrl = $ARGV[5] || 18;
+	my $maxrl = $ARGV[6] || 36;
+	
+	clip_adapter($adapter_seq, $srnaseq_file, $clipped_file, $minrl, $maxrl);
+	
+	srna_stat($clipped_file, $stat_file, $minrl, $maxrl);
+	
+	plot_srna_dist($stat_file, $plot_file);
+	
+}
+
+# Clip adapter sequence of fastq file
+sub clip_adapter {
+	
+	my ($adapter, $srnaseq_file, $clipped_file, $minrl, $maxrl) = @_;
+	
+	# Covert adapter to capital
+	$adapter =~ tr/atcgn/ATCGN/;
+	$adapter = substr($adapter, 0, 6);
+
+	my ($read_id, $read, $qual_id, $qual);
+	open (FQI, $srnaseq_file) or die "Cannot open $srnaseq_file: $!\n";
+	open (FQO, ">$clipped_file") or die "Cannot open $clipped_file: $!\n";
+	while ($read_id = <FQI>) {
+		$read = <FQI>;
+		$qual_id = <FQI>;
+		$qual = <FQI>;
+		chomp $read;
+		my $clipped_read = $read;
+		my $clipped_qual = $qual;
+		my $pos = -1;
+		while (($pos = index($read, $adapter, $pos)) > -1){
+			$clipped_read = substr($read, 0, $pos);
+			$clipped_qual = substr($qual, 0, $pos);
+			last;
+		}
+		next if ($pos < $minrl);
+		next if ($pos > $maxrl);
+		print FQO $read_id, $clipped_read, "\n", $qual_id, $clipped_qual, "\n";
+	}
+	close FQI;
+	close FQO;
+
+}
+
+# Small RNA statistics
+sub srna_stat {
+
+	my ($file, $stat_file, $minrl, $maxrl) = @_;
+
+	open (IN, $file) or die "Cannot open file $file: $!\n";
+	
+	# read length array
+	my @read_len = ();
+	foreach ($minrl .. $maxrl) {
+		$read_len[$_] = 0;
+	}
+
+	# 5' base hash and array
+	my %base = ();
+	my @base = ("T", "A", "G", "C", "N");
+	foreach my $i ($minrl .. $maxrl) {
+		foreach my $j (@base) {
+			$base{$i}{$j} = 0;
+		}
+	}
+	
+	# stat
+	my $read = undef;
+	my $skip = undef;
+	while (<IN>) {
+		if (/^@/) {
+			$read = <IN>;
+			$skip = <IN>;
+			$skip = <IN>;
+			chomp $read;
+			# abundance
+			$read_len[length($read)]++;
+			# content
+			my $base1 = substr($read, 0, 1);
+			$base{length($read)}{$base1}++;
+		}
+	}
+	
+	close IN;
+
+	open (STAT, ">$stat_file") or die "Cannot open $stat_file: $!\n";
+	print STAT "size\tfreq\tu\ta\tg\tc\tn\n";
+	foreach ($minrl .. $maxrl) {
+		# read length
+		print STAT $_, "\t", $read_len[$_];
+		# 5' base
+		foreach my $base (@base) {
+			print STAT "\t", $base{$_}{$base};
+		}
+		print STAT "\n";
+	}
+	close STAT;
+
+}
+
+# plot sRNA size distribution
+sub plot_srna_dist {
+	
+	my ($data, $plot) = @_;
+	
+	my $r = <<"RCMD";
+uagc<-c("#122E28", "#00DAD4", "#E68E00","#FF5490")
+rl<-read.table("$data", header = T, row.names = 1)
+pdf(file = "$plot", width = 3.2, height = 2)
+par(mar = c(3.5,3.5,0.5,0),
+    mgp = c(2,0.75,0),
+    cex = 0.8)
+barplot(t(rl[,2:5]) / 10^6,
+        col = uagc,
+        xlab = "Small RNA size (nt)",
+        ylab = expression(paste("Frequency (x ", 10^6, ")")),
+        cex.axis = 0.8,
+        cex.names = 0.8,
+        cex.lab = 0.8,
+        border = NA,
+        legend = c("U", "A", "G", "C"),
+        args.legend = list(border = NA,
+                           cex = 0.6,
+                           bg = "gray90",
+                           box.lwd =NA)
+        )
+dev.off()
+RCMD
+	
+	open (R, ">plot_srna_dist.R") or die "Cannot open plot_sRNA_dist.R: $!\n";
+	print R $r, "\n";
+	close R;
+	
+	system("R CMD BATCH plot_srna_dist.R");
+	unlink("plot_srna_dist.R");
+	unlink("plot_srna_dist.Rout");
+	
+}
