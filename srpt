@@ -21,7 +21,7 @@ srpt();
 sub srpt {
 
 	# file i/o
-	my $adapter_seq = $ARGV[0] || 'AGATCGGA';
+	my $adapter = $ARGV[0] || 'AGATCGGA';
 	my $srnaseq_file = $ARGV[1] || 'srna.fq';
 	my $clipped_file = $ARGV[2] || 'srna.clipped.fq';
 	my $stat_file = $ARGV[3] || 'srna.stat.tsv';
@@ -29,9 +29,9 @@ sub srpt {
 	my $minrl = $ARGV[5] || 18;
 	my $maxrl = $ARGV[6] || 36;
 	
-	clip_adapter($adapter_seq, $srnaseq_file, $clipped_file, $minrl, $maxrl);
+	my $libsize = clip_adapter($adapter, $srnaseq_file, $clipped_file, $minrl, $maxrl);
 	
-	srna_stat($clipped_file, $stat_file, $minrl, $maxrl);
+	srna_stat($clipped_file, $stat_file, $minrl, $maxrl, $libsize);
 	
 	plot_srna_dist($stat_file, $plot_file);
 	
@@ -46,13 +46,14 @@ sub clip_adapter {
 	$adapter =~ tr/atcgn/ATCGN/;
 	$adapter = substr($adapter, 0, 6);
 
-	my ($read_id, $read, $qual_id, $qual);
+	my ($read_id, $read, $qual_id, $qual, $libsize);
 	open (FQI, $srnaseq_file) or die "Cannot open $srnaseq_file: $!\n";
 	open (FQO, ">$clipped_file") or die "Cannot open $clipped_file: $!\n";
 	while ($read_id = <FQI>) {
 		$read = <FQI>;
 		$qual_id = <FQI>;
 		$qual = <FQI>;
+		$libsize++;
 		chomp $read;
 		my $clipped_read = $read;
 		my $clipped_qual = $qual;
@@ -68,13 +69,15 @@ sub clip_adapter {
 	}
 	close FQI;
 	close FQO;
+	
+	return $libsize;
 
 }
 
 # Small RNA statistics
 sub srna_stat {
 
-	my ($file, $stat_file, $minrl, $maxrl) = @_;
+	my ($file, $stat_file, $minrl, $maxrl, $libsize) = @_;
 
 	open (IN, $file) or die "Cannot open file $file: $!\n";
 	
@@ -113,7 +116,7 @@ sub srna_stat {
 	close IN;
 
 	open (STAT, ">$stat_file") or die "Cannot open $stat_file: $!\n";
-	print STAT "size\tfreq\tu\ta\tg\tc\tn\n";
+	print STAT "len\tfreq\tu\ta\tg\tc\tn\tlibsize\n";
 	foreach ($minrl .. $maxrl) {
 		# read length
 		print STAT $_, "\t", $read_len[$_];
@@ -121,7 +124,7 @@ sub srna_stat {
 		foreach my $base (@base) {
 			print STAT "\t", $base{$_}{$base};
 		}
-		print STAT "\n";
+		print STAT "\t$libsize\n";
 	}
 	close STAT;
 
@@ -139,10 +142,10 @@ pdf(file = "$plot", width = 3.2, height = 2)
 par(mar = c(3.5,3.5,0.5,0),
     mgp = c(2,0.75,0),
     cex = 0.8)
-barplot(t(rl[,2:5]) / 10^6,
+barplot(t(rl[,2:5]/rl[1,7])*10,
         col = uagc,
         xlab = "Small RNA size (nt)",
-        ylab = expression(paste("Frequency (x ", 10^6, ")")),
+        ylab = expression(paste("Frequency (x ", 10^6, " RPTM)")),
         cex.axis = 0.8,
         cex.names = 0.8,
         cex.lab = 0.8,
@@ -152,7 +155,7 @@ barplot(t(rl[,2:5]) / 10^6,
                            cex = 0.6,
                            bg = "gray90",
                            box.lwd =NA)
-        )
+)
 dev.off()
 RCMD
 	
