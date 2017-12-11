@@ -24,14 +24,18 @@ sub srpt {
 	my $adapter = $ARGV[0] || 'AGATCGGA';
 	my $srnaseq_file = $ARGV[1] || 'srna.fq';
 	my $clipped_file = $ARGV[2] || 'srna.clipped.fq';
-	my $stat_file = $ARGV[3] || 'srna.stat.tsv';
-	my $plot_file = $ARGV[4] || 'srna.dist.pdf';
-	my $minrl = $ARGV[5] || 18;
-	my $maxrl = $ARGV[6] || 36;
+	my $trna_file = $ARGV[3] || 'data/refseq/ncRNA.fa';
+	my $filtered_file = $ARGV[4] || 'srna.filtered.fq';
+	my $stat_file = $ARGV[5] || 'srna.stat.tsv';
+	my $plot_file = $ARGV[6] || 'srna.dist.pdf';
+	my $minrl = $ARGV[7] || 18;
+	my $maxrl = $ARGV[8] || 36;
 	
 	my $libsize = clip_adapter($adapter, $srnaseq_file, $clipped_file, $minrl, $maxrl);
 	
-	srna_stat($clipped_file, $stat_file, $minrl, $maxrl, $libsize);
+	filter_known_seq($clipped_file, $trna_file, $filtered_file);
+	
+	srna_stat($filtered_file, $stat_file, $minrl, $maxrl, $libsize);
 	
 	plot_srna_dist($stat_file, $plot_file);
 	
@@ -72,6 +76,17 @@ sub clip_adapter {
 	
 	return $libsize;
 
+}
+
+sub filter_known_seq {
+	
+	my ($fastq_file, $seq_file, $filtered_file) = @_;
+	
+	unless ( -e $seq_file . '.1.ebwt') {
+		system("bowtie-build $seq_file $seq_file > /dev/null");
+	}
+	system("bowtie -v 0 --un $filtered_file $seq_file $fastq_file > /dev/null");
+	
 }
 
 # Small RNA statistics
@@ -146,6 +161,7 @@ barplot(t(rl[,2:5]/rl[1,7])*10,
         col = uagc,
         xlab = "Small RNA size (nt)",
         ylab = expression(paste("Frequency (x ", 10^6, " RPTM)")),
+		ylim = c(0, 1),
         cex.axis = 0.8,
         cex.names = 0.8,
         cex.lab = 0.8,
