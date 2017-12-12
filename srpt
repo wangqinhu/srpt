@@ -94,6 +94,7 @@ sub filter_known_seq {
 		system("bowtie-build $seq_file $seq_file > /dev/null");
 	}
 	system("bowtie -v 0 --un $filtered_file $seq_file $fastq_file > /dev/null");
+	unlink("$fastq_file");
 	
 }
 
@@ -162,7 +163,7 @@ sub plot_srna_dist {
 uagc<-c("#122E28", "#00DAD4", "#E68E00","#FF5490")
 rl<-read.table("$data", header = T, row.names = 1)
 pdf(file = "$plot", width = 3.2, height = 2)
-par(mar = c(3.5,3.5,0.5,0),
+par(mar = c(3.5,3.5,1,0),
     mgp = c(2,0.75,0),
     cex = 0.8)
 barplot(t(rl[,2:5]/rl[1,7])*10,
