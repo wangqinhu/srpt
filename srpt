@@ -37,15 +37,16 @@ sub srpt {
 	my $clipped_file = "$prefix.clip.fq";
 	my $filtered_file = "$prefix.clean.fq";
 	my $stat_file = "$prefix.stat.tsv";
-	my $plot_file = "$prefix.dist.pdf";
 
+	print STDERR "Processing $srnaseq_file ...\n";
+	
 	my $libsize = clip_adapter($adapter, $srnaseq_file, $clipped_file, $minrl, $maxrl);
 	
 	filter_known_seq($clipped_file, $knownseq_file, $filtered_file);
 	
 	srna_stat($filtered_file, $stat_file, $minrl, $maxrl, $libsize);
 	
-	plot_srna_dist($stat_file, $plot_file);
+	plot_srna_dist($stat_file, $prefix);
 	
 }
 
@@ -157,39 +158,41 @@ sub srna_stat {
 # plot sRNA size distribution
 sub plot_srna_dist {
 	
-	my ($data, $plot) = @_;
+	my ($data, $prefix) = @_;
 	
 	my $r = <<"RCMD";
 uagc<-c("#122E28", "#00DAD4", "#E68E00","#FF5490")
 rl<-read.table("$data", header = T, row.names = 1)
-pdf(file = "$plot", width = 3.2, height = 2)
+pdf(file = "$prefix.dist.pdf", width = 3.2, height = 2)
 par(mar = c(3.5,3.5,1,0),
     mgp = c(2,0.75,0),
+    xpd = T,
     cex = 0.8)
 barplot(t(rl[,2:5]/rl[1,7])*10,
         col = uagc,
         xlab = "Small RNA size (nt)",
         ylab = expression(paste("Frequency (x ", 10^6, " RPTM)")),
-		ylim = c(0, 1),
+        ylim = c(0, 1),
         cex.axis = 0.8,
         cex.names = 0.8,
         cex.lab = 0.8,
-        border = NA,
-        legend = c("U", "A", "G", "C"),
-        args.legend = list(border = NA,
-                           cex = 0.6,
-                           bg = "gray90",
-                           box.lwd =NA)
-)
+        border = NA)
+legend(0.1, 1, rev(c("U", "A", "G", "C")),
+       pch = 16,
+       col = rev(uagc),
+       border = NA,
+       cex = 0.7,
+       bg = "gray90",
+       box.lwd =NA)
 dev.off()
 RCMD
 	
-	open (R, ">plot_srna_dist.R") or die "Cannot open plot_sRNA_dist.R: $!\n";
+	open (R, ">$prefix.dist.R") or die "Cannot open $prefix.dist.R: $!\n";
 	print R $r, "\n";
 	close R;
 	
-	system("R CMD BATCH plot_srna_dist.R");
-	unlink("plot_srna_dist.R");
-	unlink("plot_srna_dist.Rout");
+	system("R CMD BATCH $prefix.dist.R");
+	unlink("$prefix.dist.R");
+	unlink("$prefix.dist.Rout");
 	
 }
