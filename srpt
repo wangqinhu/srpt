@@ -94,7 +94,7 @@ sub filter_known_seq {
 	unless ( -e $seq_file . '.1.ebwt') {
 		system("bowtie-build $seq_file $seq_file > /dev/null");
 	}
-	system("bowtie -v 0 --un $filtered_file $seq_file $fastq_file > /dev/null");
+	system("bowtie -v 1 --un $filtered_file $seq_file $fastq_file > /dev/null");
 	unlink("$fastq_file");
 	
 }
