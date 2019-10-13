@@ -3,7 +3,7 @@
 #
 # Description: Small RNA preprocess tool (srpt)
 #
-# Copyright (c) 2017 Northwest A&F University
+# Copyright (c) 2017-2019 Northwest A&F University
 # Author: Qinhu Wang
 # Email: wangqinhu@nwafu.edu.cn
 #
@@ -21,16 +21,17 @@ srpt();
 sub srpt {
 
 	# input
-	my $adapter = $ARGV[0] || 'AGATCGGA';
-	my $srnaseq_file = $ARGV[1] || 'sRNA.fq';
+	my $srnaseq_file = $ARGV[0] || 'sRNA.fq.gz';
+	my $adapter = $ARGV[1] || 'AGATCGGA';
 	my $knownseq_file = $ARGV[2] || 'data/refseq/FG.RR.ncRNA.fa';
 	my $minrl = $ARGV[3] || 18;
 	my $maxrl = $ARGV[4] || 36;
 	my $prefix = $ARGV[5];
-	
+
 	# output
 	unless (defined $prefix) {
 		$prefix = $srnaseq_file;
+		$prefix =~ s/.gz//;
 		$prefix =~ s/.fq//;
 		$prefix =~ s/.fastq//;
 	}
@@ -39,28 +40,32 @@ sub srpt {
 	my $stat_file = "$prefix.stat.tsv";
 
 	print STDERR "Processing $srnaseq_file ...\n";
-	
+
 	my $libsize = clip_adapter($adapter, $srnaseq_file, $clipped_file, $minrl, $maxrl);
-	
+
 	filter_known_seq($clipped_file, $knownseq_file, $filtered_file);
-	
+
 	srna_stat($filtered_file, $stat_file, $minrl, $maxrl, $libsize);
-	
+
 	plot_srna_dist($stat_file, $prefix);
-	
+
 }
 
 # Clip adapter sequence of fastq file
 sub clip_adapter {
-	
+
 	my ($adapter, $srnaseq_file, $clipped_file, $minrl, $maxrl) = @_;
-	
+
 	# Covert adapter to capital
 	$adapter =~ tr/atcgn/ATCGN/;
 	$adapter = substr($adapter, 0, 6);
 
 	my ($read_id, $read, $qual_id, $qual, $libsize);
-	open (FQI, $srnaseq_file) or die "Cannot open $srnaseq_file: $!\n";
+	if( $srnaseq_file =~ /\.gz$/ ) {
+		open (FQI, "gunzip -c $srnaseq_file|") or die "Cannot open $srnaseq_file: $!\n";
+	} else {
+		open (FQI, $srnaseq_file) or die "Cannot open $srnaseq_file: $!\n";
+	}
 	open (FQO, ">$clipped_file") or die "Cannot open $clipped_file: $!\n";
 	while ($read_id = <FQI>) {
 		$read = <FQI>;
@@ -82,21 +87,21 @@ sub clip_adapter {
 	}
 	close FQI;
 	close FQO;
-	
+
 	return $libsize;
 
 }
 
 sub filter_known_seq {
-	
+
 	my ($fastq_file, $seq_file, $filtered_file) = @_;
-	
+
 	unless ( -e $seq_file . '.1.ebwt') {
 		system("bowtie-build $seq_file $seq_file > /dev/null");
 	}
 	system("bowtie -v 1 --un $filtered_file $seq_file $fastq_file > /dev/null");
 	unlink("$fastq_file");
-	
+
 }
 
 # Small RNA statistics
@@ -105,7 +110,7 @@ sub srna_stat {
 	my ($file, $stat_file, $minrl, $maxrl, $libsize) = @_;
 
 	open (IN, $file) or die "Cannot open file $file: $!\n";
-	
+
 	# read length array
 	my @read_len = ();
 	foreach ($minrl .. $maxrl) {
@@ -120,7 +125,7 @@ sub srna_stat {
 			$base{$i}{$j} = 0;
 		}
 	}
-	
+
 	# stat
 	my $read = undef;
 	my $skip = undef;
@@ -137,7 +142,7 @@ sub srna_stat {
 			$base{length($read)}{$base1}++;
 		}
 	}
-	
+
 	close IN;
 
 	open (STAT, ">$stat_file") or die "Cannot open $stat_file: $!\n";
@@ -157,9 +162,9 @@ sub srna_stat {
 
 # plot sRNA size distribution
 sub plot_srna_dist {
-	
+
 	my ($data, $prefix) = @_;
-	
+
 	my $r = <<"RCMD";
 uagc<-c("#122E28", "#00DAD4", "#E68E00","#FF5490")
 rl<-read.table("$data", header = T, row.names = 1)
@@ -172,12 +177,12 @@ barplot(t(rl[,2:5]/rl[1,7])*10,
         col = uagc,
         xlab = "Small RNA size (nt)",
         ylab = expression(paste("Frequency (x ", 10^6, " RPTM)")),
-        ylim = c(0, 0.6),
+        ylim = c(0, 0.8),
         cex.axis = 0.8,
         cex.names = 0.8,
         cex.lab = 0.8,
         border = NA)
-legend(0.1, 0.6, rev(c("U", "A", "G", "C")),
+legend(0.1, 0.8, rev(c("U", "A", "G", "C")),
        pch = 16,
        col = rev(uagc),
        border = NA,
@@ -186,13 +191,13 @@ legend(0.1, 0.6, rev(c("U", "A", "G", "C")),
        box.lwd =NA)
 dev.off()
 RCMD
-	
+
 	open (R, ">$prefix.dist.R") or die "Cannot open $prefix.dist.R: $!\n";
 	print R $r, "\n";
 	close R;
-	
+
 	system("R CMD BATCH $prefix.dist.R");
 	unlink("$prefix.dist.R");
 	unlink("$prefix.dist.Rout");
-	
+
 }
